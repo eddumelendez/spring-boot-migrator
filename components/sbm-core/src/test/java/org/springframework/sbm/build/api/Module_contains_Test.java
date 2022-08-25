@@ -26,7 +26,7 @@ import java.nio.file.Path;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatIllegalArgumentException;
 
-class Module_getModuleResources_Test {
+class Module_contains_Test {
     @Test
     void singleModuleProject() {
         String rootPom = PomBuilder
@@ -78,6 +78,9 @@ class Module_getModuleResources_Test {
 
         String module2Pom = PomBuilder.buiildPom("com.example:parent:1.0", "module2").build();
 
+        String moduleInModule1Pom = PomBuilder.buiildPom("com.example:parent:1.0", "module-in-module1").build();
+
+
         String javaClass = """
                 package com.example;
                 public class SomeClass {}
@@ -86,11 +89,18 @@ class Module_getModuleResources_Test {
                 package com.example;
                 public class SomeClassTest {}
                 """;
+
+        // shares module path of module1 and module1/module-in-module1
+        String sourcePathString = "module1/module-in-module1/src/main/resources/module-in-module1.txt";
+
         ProjectContext context = TestProjectContext
                 .buildProjectContext()
                 .withMavenBuildFileSource("module1/pom.xml", module1Pom)
                 .addJavaSource("module1/src/test/java", testjavaClass)
                 .addProjectResource("module1/src/test/resources/test-resource-found.txt", "")
+
+                .withMavenBuildFileSource("module1/module-in-module1/pom.xml", moduleInModule1Pom)
+                .addProjectResource(sourcePathString, "")
 
                 .withMavenBuildFileSource("module2/pom.xml", module2Pom)
                 .addJavaSource("module2/src/main/java", javaClass)
@@ -107,7 +117,15 @@ class Module_getModuleResources_Test {
         assertThat(root.contains(rootPath.resolve("pom.xml"))).isTrue();
         assertThat(root.contains(rootPath.resolve("src/main/java/com/example/SomeClass.java"))).isFalse();
 
-        Module module1 = context.getApplicationModules().getModule("module2");
+        Module module1 = context.getApplicationModules().getModule("module1");
+
+        // precondition
+        Path resourceInSubmodule = rootPath.resolve("module1/module-in-module1/module-in-module1.txt");
+        assertThat(context.getProjectResources().stream().anyMatch(r -> r.getAbsolutePath().equals(resourceInSubmodule))).isTrue();
+
+        assertThat(module1.contains(rootPath.resolve(sourcePathString))).isFalse();
+        Module moduleInModule1 = context.getApplicationModules().getModule("module1/module-in-module1");
+        assertThat(moduleInModule1.contains(resourceInSubmodule)).isTrue();
 
         assertThat(module1.contains(rootPath.resolve("module2//main/java/com/example/SomeClass.java"))).isFalse();
         assertThat(
